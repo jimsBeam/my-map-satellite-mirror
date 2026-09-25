@@ -57,12 +57,12 @@ approval carries:
 
 1. Push this repository (public).
 2. **Settings → Pages → Deploy from a branch**, branch `main`, folder `/docs`.
-3. Set `PROJECT_URL` in `scripts/mirror_fetch.py`, and `CONTACT` if you want one. Use a
-   forwarding alias rather than a personal address — this file is public.
+3. Set `PROJECT_URL` in `scripts/mirror_fetch.py`. `CONTACT` is optional and left empty here;
+   if you ever add one, use a forwarding alias, not a personal address — this file is public.
 4. **Actions → Mirror satellite data → Run workflow** to populate `docs/` immediately.
 5. Point the app at the published URLs:
-   - `SatelliteCatalog.mirrorURL` → `https://<your-mirror-host>/visual.tle`
-   - `SatelliteReferenceCatalog.sourceURL` → `https://<your-mirror-host>/satcat-visual.csv`
+   - `SatelliteCatalog.mirrorURL` → `https://jimsbeam.github.io/my-map-satellite-mirror/visual.tle`
+   - `SatelliteReferenceCatalog.sourceURL` → `https://jimsbeam.github.io/my-map-satellite-mirror/satcat-visual.csv`
 
 ## Keeping an eye on it
 

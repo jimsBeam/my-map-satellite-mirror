@@ -9,14 +9,14 @@
 #    1. Create a public repository and push this file, scripts/mirror_fetch.py and README.md.
 #    2. Settings -> Pages -> Build and deployment -> Deploy from a branch,
 #       branch "main", folder "/docs". Save.
-#    3. Edit USER_AGENT in scripts/mirror_fetch.py to carry your repo URL and a real email
-#       address. CelesTrak asks clients to identify themselves, and it is the difference between
-#       being emailed about a problem and being blocked over one.
+#    3. Set PROJECT_URL in scripts/mirror_fetch.py to this repo's URL. CelesTrak asks clients to
+#       identify themselves; the URL alone does that. A CONTACT address is optional and is left
+#       empty here deliberately -- this file is public, and a public repo is a scraped repo.
 #    4. Actions -> Mirror satellite data -> Run workflow, to populate docs/ immediately rather
 #       than waiting for the first scheduled run.
 #    5. Point the app at the published files:
-#         SatelliteCatalog.mirrorURL           https://<your-mirror-host>/visual.tle
-#         SatelliteReferenceCatalog.sourceURL  https://<your-mirror-host>/satcat-visual.csv
+#         SatelliteCatalog.mirrorURL           https://jimsbeam.github.io/my-map-satellite-mirror/visual.tle
+#         SatelliteReferenceCatalog.sourceURL  https://jimsbeam.github.io/my-map-satellite-mirror/satcat-visual.csv
 #
 #  GOTCHA WORTH KNOWING
 #

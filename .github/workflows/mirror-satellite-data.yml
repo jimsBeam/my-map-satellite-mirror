@@ -1,0 +1,76 @@
+#
+#  .github/workflows/mirror-satellite-data.yml
+#
+#  Republishes CelesTrak's visual satellite group for My_Map, once per 2-hour update cycle.
+#  This job is the only thing that talks to CelesTrak; the app talks to GitHub Pages.
+#
+#  ONE-TIME SETUP
+#
+#    1. Create a public repository and push this file, scripts/mirror_fetch.py and README.md.
+#    2. Settings -> Pages -> Build and deployment -> Deploy from a branch,
+#       branch "main", folder "/docs". Save.
+#    3. Edit USER_AGENT in scripts/mirror_fetch.py to carry your repo URL and a real email
+#       address. CelesTrak asks clients to identify themselves, and it is the difference between
+#       being emailed about a problem and being blocked over one.
+#    4. Actions -> Mirror satellite data -> Run workflow, to populate docs/ immediately rather
+#       than waiting for the first scheduled run.
+#    5. Point the app at the published files:
+#         SatelliteCatalog.mirrorURL           https://<your-mirror-host>/visual.tle
+#         SatelliteReferenceCatalog.sourceURL  https://<your-mirror-host>/satcat-visual.csv
+#
+#  GOTCHA WORTH KNOWING
+#
+#  GitHub disables scheduled workflows in a repository after 60 days with no activity, and a
+#  bot's own commits do not reliably count as activity. You get a warning email first. If the
+#  schedule ever goes quiet, re-enable it from the Actions tab. The consequence of missing it is
+#  mild by design -- the app keeps serving its cache and tells users the elements are ageing --
+#  but the mirror is the kind of thing that fails silently, so it is worth a calendar reminder or
+#  a monitor on docs/status.json.
+#
+
+name: Mirror satellite data
+
+on:
+  schedule:
+    #  Every two hours at :23. The odd minute is deliberate: Actions delays cron jobs submitted
+    #  on the hour, when everybody else's are queued.
+    - cron: '23 */2 * * *'
+  workflow_dispatch:
+
+#  Never let two runs overlap -- two clients hitting CelesTrak inside one update window is exactly
+#  what the 403 rule is there to stop.
+concurrency:
+  group: mirror-satellite-data
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Fetch and validate
+        run: python3 scripts/mirror_fetch.py
+
+      - name: Publish if the data changed
+        run: |
+          mkdir -p docs
+          touch docs/.nojekyll
+
+          git add -A docs/
+
+          if git diff --cached --quiet; then
+            echo "No change -- no commit, no Pages redeploy, app ETags stay valid."
+            exit 0
+          fi
+
+          git config user.name  "my-map-mirror"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Mirror update $(date -u +'%Y-%m-%dT%H:%MZ')"
+          git push

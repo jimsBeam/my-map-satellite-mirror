@@ -84,7 +84,22 @@ SATCAT_NORAD_COLUMN = 2
 
 
 class MirrorError(Exception):
-    """Something went wrong. Nothing on disk has been touched."""
+    """Something went wrong AND it needs a human. Nothing on disk has been touched."""
+
+
+class TransientError(MirrorError):
+    """CelesTrak was briefly unreachable or unhappy. Nothing on disk has been touched, and
+    there is nothing to fix :: the next scheduled cycle is two hours away and will simply try
+    again. Kept as a SUBCLASS of MirrorError so that any code that only knows about
+    MirrorError still behaves correctly -- but main() catches this one FIRST and exits 0, so a
+    red failed run always means something a person has to act on.
+
+    [261023] Why this exists :: runs #111 and #113 failed on consecutive nights -- one in 6
+    seconds (an immediate refusal) and one in 36 seconds (the 30-second timeout) -- while the
+    job published normally before and after, and the same script run by hand from a home
+    connection fetched both sources with HTTP 200. CelesTrak intermittently refuses or drops a
+    shared GitHub runner. The mirror already handles that correctly by doing nothing; the only
+    real problem was that it emailed about it."""
 
 
 # ---------------------------------------------------------------------------------------------
@@ -116,10 +131,16 @@ def fetch(url, label):
                 f"Check the URL against CelesTrak's current documentation, and check whether this "
                 f"job is running more than once per update cycle."
             )
+        #  5xx is CelesTrak having a moment, not a mistake of ours. 429 is rate limiting, which
+        #  waiting out is precisely the right response. Everything else in 4xx means the request
+        #  itself is wrong and repeating it will not help.
+        if error.code == 429 or 500 <= error.code <= 599:
+            raise TransientError(f"{label}: HTTP {error.code} {error.reason}")
         raise MirrorError(f"{label}: HTTP {error.code} {error.reason}")
 
     except urllib.error.URLError as error:
-        raise MirrorError(f"{label}: could not reach CelesTrak ({error.reason})")
+        #  Timeouts, resets, DNS -- the network, not the data.
+        raise TransientError(f"{label}: could not reach CelesTrak ({error.reason})")
 
     except UnicodeDecodeError:
         raise MirrorError(f"{label}: response was not valid UTF-8")
@@ -269,7 +290,20 @@ def main():
         satcat_raw = fetch(SATCAT_URL, "SATCAT")
         satcat_text, satcat_rows = filter_satcat(satcat_raw, norad_ids)
 
+    #  ORDER MATTERS :: TransientError subclasses MirrorError, so it has to be caught first.
+    except TransientError as error:
+        #  A GitHub Actions warning annotation :: visible in the run summary, yellow not red,
+        #  and it does not send a failure email.
+        print(f"::warning title=Mirror skipped this cycle::{error}")
+        print(f"\nSKIPPED: {error}", file=sys.stderr)
+        print("This is the expected response to a brief refusal, not a fault. Nothing was "
+              "changed, the previously published files are still being served, and the next "
+              "scheduled cycle is two hours away. No action needed unless EVERY cycle is "
+              "skipping, which would mean it is no longer transient.", file=sys.stderr)
+        return 0
+
     except MirrorError as error:
+        print(f"::error title=Mirror needs attention::{error}")
         print(f"\nFAILED: {error}", file=sys.stderr)
         print("Nothing was changed. The previously published files are still being served, and "
               "the app will keep serving its own cache.", file=sys.stderr)

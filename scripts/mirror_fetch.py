@@ -39,6 +39,7 @@ A non-zero exit turns the Actions run red, which is how you find out the mirror 
 """
 
 import csv
+import http.client
 import io
 import json
 import os
@@ -141,6 +142,23 @@ def fetch(url, label):
     except urllib.error.URLError as error:
         #  Timeouts, resets, DNS -- the network, not the data.
         raise TransientError(f"{label}: could not reach CelesTrak ({error.reason})")
+
+    except (TimeoutError, ConnectionError, http.client.HTTPException) as error:
+        #  [261113] The same class of problem, one phase later, and the gap that let run #180
+        #  go red. urllib wraps only CONNECTION-phase failures in URLError. A stall or reset
+        #  during response.read() arrives bare -- socket.timeout (which IS TimeoutError from
+        #  3.10 on), ConnectionResetError, IncompleteRead -- so it slipped past both handlers
+        #  above and escaped as a traceback: exit 1, a red run, and an email about something
+        #  no one can fix. SATCAT is ~7 MB, so the read is exactly where a loaded shared
+        #  runner drops us; #180 died 37 seconds in, which is REQUEST_TIMEOUT plus checkout.
+        #
+        #  Ordering note for anyone editing this: HTTPError is a URLError is an OSError, and
+        #  TimeoutError and ConnectionError are OSErrors too, so this clause MUST stay below
+        #  the two above or it would swallow every HTTP refusal. HTTPException sits outside
+        #  that tree entirely and is safe anywhere.
+        raise TransientError(
+            f"{label}: transfer failed mid-read ({type(error).__name__}: {error})"
+        )
 
     except UnicodeDecodeError:
         raise MirrorError(f"{label}: response was not valid UTF-8")

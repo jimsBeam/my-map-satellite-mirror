@@ -80,8 +80,21 @@ REQUEST_TIMEOUT = 30
 MIN_GP_OBJECTS = 50
 MIN_SATCAT_ROWS = 20_000
 
-#  SATCAT column order, per https://celestrak.org/satcat/satcat-format.php
+#  SATCAT column order, per https://celestrak.org/satcat/satcat-format.php. Used only as the
+#  starting assumption now: the real index is resolved from the header on every run.
 SATCAT_NORAD_COLUMN = 2
+
+#  [261113] Every column the app's SatelliteReferenceCatalog reads. Checking the header against
+#  this list is the point of the whole mirror: validation belongs HERE, once, rather than in
+#  every copy of the app after a bad file has already been cached. Until today the only header
+#  check asked whether NORAD_CAT_ID existed somewhere -- so a column INSERTED anywhere after it
+#  passed every test, published clean, and shifted every field the app read by one place. A
+#  missing column is a MirrorError on purpose: that one really does need a human.
+SATCAT_REQUIRED_COLUMNS = (
+    "OBJECT_NAME", "OBJECT_ID", "NORAD_CAT_ID", "OBJECT_TYPE", "OPS_STATUS_CODE",
+    "OWNER", "LAUNCH_DATE", "LAUNCH_SITE", "DECAY_DATE",
+    "PERIOD", "INCLINATION", "APOGEE", "PERIGEE",
+)
 
 
 class MirrorError(Exception):
@@ -237,16 +250,30 @@ def filter_satcat(text, norad_ids):
     except StopIteration:
         raise MirrorError("SATCAT: empty")
 
-    if "NORAD_CAT_ID" not in header:
-        raise MirrorError(f"SATCAT: unexpected header {header[:6]} — column layout has changed")
+    missing = [name for name in SATCAT_REQUIRED_COLUMNS if name not in header]
+    if missing:
+        raise MirrorError(
+            f"SATCAT: header no longer carries {', '.join(missing)} — the column layout has "
+            f"changed. Refusing to publish: the app reads these by name and would quietly lose "
+            f"them. Check https://celestrak.org/satcat/satcat-format.php, then update "
+            f"SATCAT_REQUIRED_COLUMNS here and the ColumnMap in SatelliteReferenceCatalog.swift. "
+            f"Header was {header}."
+        )
+
+    #  Reordering is survivable -- the app resolves columns by name -- but it is worth saying out
+    #  loud in the run summary, because it means CelesTrak changed something.
+    norad_column = header.index("NORAD_CAT_ID")
+    if norad_column != SATCAT_NORAD_COLUMN:
+        print(f"::warning title=SATCAT layout moved::NORAD_CAT_ID is now column {norad_column}, "
+              f"was {SATCAT_NORAD_COLUMN}. Harmless, but the format has changed.")
 
     kept, total = [], 0
 
     for row in reader:
         total += 1
-        if len(row) <= SATCAT_NORAD_COLUMN:
+        if len(row) <= norad_column:
             continue
-        raw_id = row[SATCAT_NORAD_COLUMN].strip()
+        raw_id = row[norad_column].strip()
         try:
             normalised = str(int(raw_id))
         except ValueError:
